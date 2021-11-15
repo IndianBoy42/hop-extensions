@@ -1,6 +1,20 @@
 # Hop Extensions for Treesitter and LSP
 
+
 Work-in-progress. API may change. Performance may improve. Only Lua API for now
+
+Install like any other plugin
+```
+Plug 'indianboy42/hop-extensions'
+```
+
+or Packer
+```
+use 'indianboy42/hop-extensions'
+
+```
+
+Usage:
 
 ```lua
 local hop = require'hop-extension'
