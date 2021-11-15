@@ -5,11 +5,13 @@ Work-in-progress. API may change. Performance may improve. Only Lua API for now
 
 Install like any other plugin
 ```
+Plug 'phaazon/hop.nvim'
 Plug 'indianboy42/hop-extensions'
 ```
 
 or Packer
 ```
+use 'phaazon/hop.nvim'
 use 'indianboy42/hop-extensions'
 
 ```
