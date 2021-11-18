@@ -17,8 +17,21 @@ end
 M.hint_cword = function(opts)
 	opts = override_opts(opts)
 	local pat = vim.fn.expand("<cword>")
+	hint_with(jump_target.jump_targets_by_scanning_lines(jump_target.regex_by_searching(pat, true)), opts)
+end
+
+M.hint_vertical = function(opts)
+	opts = override_opts(opts)
+	local cursor_pos = vim.api.nvim_win_get_cursor(0)
+	local cursor_col = cursor_pos[2]
 	hint_with(
-		hint_with(jump_target.jump_targets_by_scanning_lines(jump_target.regex_by_searching(pat, true)), opts),
+		jump_target.jump_targets_by_scanning_lines({
+			oneshot = true,
+			match = function()
+				return cursor_col, cursor_col, false
+				-- return cursor_col + 1, cursor_col + 1, false
+			end,
+		}),
 		opts
 	)
 end
