@@ -2,7 +2,6 @@ local M = {}
 local jump_target = require "hop.jump_target"
 -- Wrap all the given jump targets using manh_dist
 M.wrap_targets = function(targets)
-  utils.dump(#targets)
   local cursor_pos = require("hop.window").get_window_context().cursor_pos
   local indir = {}
   for i, v in ipairs(targets) do
