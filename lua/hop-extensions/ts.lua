@@ -9,7 +9,8 @@ local function ends_with(str, ending)
 	return ending == "" or str:sub(-#ending) == ending
 end
 
-local function treesitter_filter_window(node, context, nodes_set)
+local function treesitter_filter_window(node, contexts, nodes_set)
+	local context = contexts[1].contexts[1]
 	local line, col, start = node:start()
 	if line <= context.bot_line and line >= context.top_line then
 		nodes_set[start] = {
