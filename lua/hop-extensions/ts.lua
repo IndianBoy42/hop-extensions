@@ -11,9 +11,22 @@ local function ends_with(str, ending)
 end
 
 -- Fix indexing
-local function treesitter_filter_window(node, contexts, nodes_set)
-	local line, col, _ = node:start()
-	filter_window({ lnum = line + 1, col = col + 1 }, contexts, nodes_set)
+local function treesitter_filter_window(node, contexts, nodes_set, hop_to_start, hop_to_end)
+	if hop_to_start == nil then
+		hop_to_start = true
+	end
+	if hop_to_end == nil then
+		hop_to_end = true
+	end
+
+	if hop_to_start then
+		local line, col, _ = node:start()
+		filter_window({ lnum = line + 1, col = col + 1 }, contexts, nodes_set)
+	end
+	if hop_to_end then
+		local line, col, _ = node:end_()
+		filter_window({ lnum = line + 1, col = col + 1 }, contexts, nodes_set)
+	end
 end
 
 -- TODO: performance of these functions may not be optimal
@@ -41,41 +54,64 @@ local treesitter_locals = function(filter, scope)
 	end
 end
 
-local treesitter_queries = function(query, inners, outers, queryfile)
-	queryfile = queryfile or "textobjects"
-	if inners == nil then
-		inners = true
-	end
-	if outers == nil then
-		outers = true
+local treesitter_queries = function(opts)
+	opts = vim.tbl_extend("keep", opts or {}, {
+		captures = nil,
+		query = nil,
+		queryfile = "textobjects",
+		filter = function(_, _)
+			return true
+		end,
+		root = nil,
+		lang = nil,
+		hop_to_start = true,
+		hop_to_end = true,
+	})
+	if type(opts.filter) == "table" then
+		local list = opts.filter
+		opts.filter = function(name, _)
+			for _, filter in ipairs(list) do
+				if filter then
+					return true
+				end
+			end
+			return false
+		end
 	end
 	return function(hint_opts)
 		local context = window.get_window_context()
 		local queries = require("nvim-treesitter.query")
-		local tsutils = require("nvim-treesitter.utils")
 		local nodes_set = {}
 
 		local function extract(match)
-			for _, node in pairs(match) do
-				if inners and node.outer then
-					treesitter_filter_window(node.outer.node, context, nodes_set)
+			if match.node then
+				treesitter_filter_window(match.node, context, nodes_set, opts.hop_to_start, opts.hop_to_end)
+			else
+				if type(match) ~= "table" then
+					return
 				end
-				if outers and node.inner then
-					treesitter_filter_window(node.inner.node, context, nodes_set)
+				for name, sub in pairs(match) do
+					local ok, filtered = opts.filter(name, sub)
+					if ok then
+						filtered = filtered or sub
+						extract(filtered)
+					end
 				end
 			end
 		end
 
-		if query == nil then
-			for match in queries.iter_group_results(0, queryfile) do
+		if opts.query then
+			local buf_lang = require("nvim-treesitter.parsers").get_buf_lang(0)
+			vim.treesitter.query.set_query(buf_lang, "hop-extensions", opts.query)
+			opts.queryfile = "hop-extensions"
+		end
+		if opts.captures then
+			for _, match in ipairs(queries.get_capture_matches(0, opts.captures, opts.queryfile, opts.root, opts.lang)) do
 				extract(match)
 			end
 		else
-			for match in queries.iter_group_results(0, queryfile) do
-				local insert = tsutils.get_at_path(match, query)
-				if insert then
-					extract(match)
-				end
+			for match in queries.iter_group_results(0, opts.queryfile, opts.root, opts.lang) do
+				extract(match)
 			end
 		end
 
@@ -97,7 +133,7 @@ function M.hint_scopes(opts)
 	end, opts)
 end
 local ts_utils = require("nvim-treesitter.ts_utils")
-function M.hint_local_references(pattern, opts)
+function M.hint_ts_references(pattern, opts)
 	if pattern == nil then
 		M.hint_locals(function(loc)
 			return loc.reference
@@ -113,20 +149,33 @@ function M.hint_local_references(pattern, opts)
 	end
 end
 
-function M.hint_textobjects(query, opts)
-	if type(query) == "string" then
-		-- if ends_with(query, "outer") then
+function M.hint_from_queryfile(ts_opts, opts)
+	ts_opts = ts_opts or {}
+	if type(ts_opts) == "string" then
+		-- if ends_with(captures, "outer") then
 		-- end
-		query = { query = query }
+		ts_opts = { queryfile = ts_opts }
 	end
-	hint_with(
-		treesitter_queries(
-			query and query.query,
-			query and query.inners,
-			query and query.outers,
-			query and query.queryfile
-		),
-		override_opts(opts)
-	)
+	hint_with(treesitter_queries(ts_opts), override_opts(opts))
+end
+function M.hint_from_query(ts_opts, opts)
+	ts_opts = ts_opts or {}
+	if type(ts_opts) == "string" then
+		-- if ends_with(captures, "outer") then
+		-- end
+		ts_opts = { query = ts_opts }
+	end
+	hint_with(treesitter_queries(ts_opts), override_opts(opts))
+end
+function M.hint_textobjects(ts_opts, opts)
+	ts_opts = ts_opts or {}
+	if type(ts_opts) == "string" then
+		-- if ends_with(captures, "outer") then
+		-- end
+		ts_opts = { captures = ts_opts }
+	end
+	ts_opts.queryfile = "textobjects"
+	ts_opts.filter = ts_opts.filter or { "outer", "inner" }
+	hint_with(treesitter_queries(ts_opts), override_opts(opts))
 end
 return M
