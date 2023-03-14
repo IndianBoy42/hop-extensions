@@ -12,14 +12,16 @@ local on_list_hop = require("hop-extensions.utils").on_list_hop
 
 M.ts = require("hop-extensions.ts")
 M.lsp = require("hop-extensions.lsp")
-
 M.hint_diagnostics = function(opts, diag_opts, popup)
 	opts = override_opts(opts)
 	local context = get_window_context( --[[ hint_opts --]])
-	local diags = vim.diagnostic.get(diag_opts)
+	local diags = vim.diagnostic.get(0, diag_opts)
 
 	local out = {}
 	for _, diag in ipairs(diags) do
+		diag.line = diag.lnum
+		diag.column = diag.col + 1
+		diag.window = 0
 		filter_window(diag, context, out)
 	end
 	local targets = wrap_targets(vim.tbl_values(out), context)
@@ -31,6 +33,7 @@ M.hint_diagnostics = function(opts, diag_opts, popup)
 			end,
 			opts,
 			function(jt)
+				require("hop").move_cursor_to(jt.window, jt.line + 1, jt.column - 1, opts.hint_offset, opts.direction)
 				if type(popup) == "table" then
 					vim.diagnostic.open_float(popup)
 				elseif type(popup) == "function" then

@@ -20,16 +20,25 @@ local function treesitter_filter_window(node, contexts, nodes_set, hop_to_start,
 	end
 
 	if hop_to_start then
-		local line, col, _ = node:start()
-		filter_window({ lnum = line + 1, col = col + 1 }, contexts, nodes_set)
+		local line, column, _ = node:start()
+		filter_window({
+			line = line,
+			column = column + 1,
+			window = 0,
+			ts_node = node,
+		}, contexts, nodes_set)
 	end
 	if hop_to_end then
-		local line, col, _ = node:end_()
-		filter_window({ lnum = line + 1, col = col + 1 }, contexts, nodes_set)
+		local line, column, _ = node:end_()
+		filter_window({
+			line = line,
+			column = column + 1,
+			window = 0,
+			ts_node = node,
+		}, contexts, nodes_set)
 	end
 end
 
--- TODO: performance of these functions may not be optimal
 local treesitter_locals = function(filter, scope)
 	if filter == nil then
 		filter = function(_)

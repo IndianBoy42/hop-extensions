@@ -3,15 +3,15 @@ local jump_target = require("hop.jump_target")
 -- Wrap all the given jump targets using manh_dist
 local get_window_context = require("hop.window").get_window_context
 M.wrap_targets = function(targets, contexts)
-	contexts = contexts or get_window_context()
-	local cursor_pos = contexts[1].contexts[1].cursor_pos
-	local indir = {}
-	for i, v in ipairs(targets) do
-		indir[#indir + 1] = {
-			index = i,
-			score = -jump_target.manh_dist({ v.line, v.column }, cursor_pos),
-		}
-	end
+	-- contexts = contexts or get_window_context()
+	-- local cursor_pos = contexts[1].contexts[1].cursor_pos
+	-- local indir = {}
+	-- for i, v in ipairs(targets) do
+	-- 	indir[#indir + 1] = {
+	-- 		index = i,
+	-- 		score = -jump_target.manh_dist({ v.line, v.column }, cursor_pos),
+	-- 	}
+	-- end
 	-- local indir = setmetatable({}, zero_jump_scores)
 	return {
 		jump_targets = targets,
@@ -30,8 +30,14 @@ function M.override_opts(opts)
 end
 
 function M.filter_window(node, contexts, nodes_set)
-	local line = node.lnum - 1
-	local col = node.col
+	if not node.line and node.lnum then
+		node.line = node.lnum - 1 -- This comes from quickfix... just correct it
+	end
+	local line = node.line
+	if not node.column and node.col then
+		node.column = node.col
+	end
+	local column = node.column
 	-- TODO: support multi window
 	local context = contexts[1].contexts[1] -- Just the primary window
 	if line > context.bot_line or line < context.top_line then
@@ -51,11 +57,19 @@ function M.filter_window(node, contexts, nodes_set)
 			return
 		end
 	end
-	nodes_set[line .. col] = {
-		line = line,
-		column = col,
-		window = 0,
-	}
+
+	-- nodes_set[line .. column] = {
+	-- 	line = line,
+	-- 	column = column,
+	-- 	window = 0,
+	-- }
+
+	local n = {}
+	for key, value in pairs(node) do
+		n[key] = value
+	end
+	utils.dump(nodes_set[line .. column], n)
+	nodes_set[line .. column] = n
 end
 
 local hint_with = require("hop").hint_with
@@ -68,7 +82,7 @@ M.on_list_hop = function(opts, callback)
 
 		local out = {}
 		for _, loc in ipairs(items) do
-			filter_window(loc, contexts, out)
+			M.filter_window(loc, contexts, out)
 		end
 		local targets = M.wrap_targets(vim.tbl_values(out), contexts)
 

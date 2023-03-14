@@ -1,13 +1,5 @@
 local M = {}
 -- local hop = require "hop"
-local get_window_context = require("hop.window").get_window_context
-local hint_with = require("hop").hint_with
-local hint_with_callback = require("hop").hint_with_callback
-local teutils = require("telescope.utils")
-
-local wrap_targets = require("hop-extensions.utils").wrap_targets
-local override_opts = require("hop-extensions.utils").override_opts
-local filter_window = require("hop-extensions.utils").filter_window
 
 local on_list_hop = function(opts, callback)
 	return {
