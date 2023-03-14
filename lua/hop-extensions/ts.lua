@@ -4,21 +4,16 @@ local window = require("hop.window")
 
 local wrap_targets = require("hop-extensions.utils").wrap_targets
 local override_opts = require("hop-extensions.utils").override_opts
+local filter_window = require("hop-extensions.utils").filter_window
 
 local function ends_with(str, ending)
 	return ending == "" or str:sub(-#ending) == ending
 end
 
+-- Fix indexing
 local function treesitter_filter_window(node, contexts, nodes_set)
-	local context = contexts[1].contexts[1]
-	local line, col, start = node:start()
-	if line <= context.bot_line and line >= context.top_line then
-		nodes_set[start] = {
-			line = line,
-			column = col + 1,
-			window = 0,
-		}
-	end
+	local line, col, _ = node:start()
+	filter_window({ lnum = line + 1, col = col + 1 }, contexts, nodes_set)
 end
 
 -- TODO: performance of these functions may not be optimal
@@ -59,7 +54,6 @@ local treesitter_queries = function(query, inners, outers, queryfile)
 		local queries = require("nvim-treesitter.query")
 		local tsutils = require("nvim-treesitter.utils")
 		local nodes_set = {}
-		-- utils.dump(queries.collect_group_results(0, "textobjects"))
 
 		local function extract(match)
 			for _, node in pairs(match) do
@@ -103,7 +97,7 @@ function M.hint_scopes(opts)
 	end, opts)
 end
 local ts_utils = require("nvim-treesitter.ts_utils")
-function M.hint_references(pattern, opts)
+function M.hint_local_references(pattern, opts)
 	if pattern == nil then
 		M.hint_locals(function(loc)
 			return loc.reference
