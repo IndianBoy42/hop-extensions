@@ -68,7 +68,6 @@ function M.filter_window(node, contexts, nodes_set)
 	for key, value in pairs(node) do
 		n[key] = value
 	end
-	utils.dump(nodes_set[line .. column], n)
 	nodes_set[line .. column] = n
 end
 
