@@ -39,10 +39,39 @@ local function treesitter_filter_window(node, contexts, nodes_set, hop_to_start,
 	end
 end
 
-local treesitter_locals = function(filter, scope)
+local treesitter_targets = function(nodes, ...)
+	local context = window.get_window_context()
+	local nodes_set = {}
+	if type(nodes) == "table" then
+		for _, node in ipairs(nodes) do
+			treesitter_filter_window(node, context, nodes_set, ...)
+		end
+	else
+		for node in nodes do
+			treesitter_filter_window(node, context, nodes_set, ...)
+		end
+	end
+	return wrap_targets(vim.tbl_values(nodes_set))
+end
+
+M.hint_from_list_of_nodes = treesitter_targets
+
+local recurse_nodes = require("nvim-treesitter.locals").recurse_local_nodes
+local treesitter_locals = function(filter)
 	if filter == nil then
-		filter = function(_)
+		filter = function(_, _)
 			return true
+		end
+	end
+	if type(filter) == "table" then
+		local list = filter
+		filter = function(name, _)
+			for _, f in ipairs(list) do
+				if name == f then
+					return true
+				end
+			end
+			return false
 		end
 	end
 	return function(hint_opts)
@@ -53,11 +82,11 @@ local treesitter_locals = function(filter, scope)
 		-- Make sure the nodes are unique.
 		local nodes_set = {}
 		for _, loc in ipairs(local_nodes) do
-			if filter(loc) then
-				locals.recurse_local_nodes(loc, function(_, node, _, match)
-					treesitter_filter_window(node, context, nodes_set)
-				end)
-			end
+			recurse_nodes(loc, function(_, node, name, _)
+				if filter(name, node) then
+					treesitter_filter_window(node, context, nodes_set, true, false)
+				end
+			end)
 		end
 		return wrap_targets(vim.tbl_values(nodes_set))
 	end
@@ -79,8 +108,8 @@ local treesitter_queries = function(opts)
 	if type(opts.filter) == "table" then
 		local list = opts.filter
 		opts.filter = function(name, _)
-			for _, filter in ipairs(list) do
-				if filter then
+			for _, f in ipairs(list) do
+				if name == f then
 					return true
 				end
 			end
@@ -92,23 +121,6 @@ local treesitter_queries = function(opts)
 		local queries = require("nvim-treesitter.query")
 		local nodes_set = {}
 
-		local function extract(match)
-			if match.node then
-				treesitter_filter_window(match.node, context, nodes_set, opts.hop_to_start, opts.hop_to_end)
-			else
-				if type(match) ~= "table" then
-					return
-				end
-				for name, sub in pairs(match) do
-					local ok, filtered = opts.filter(name, sub)
-					if ok then
-						filtered = filtered or sub
-						extract(filtered)
-					end
-				end
-			end
-		end
-
 		if opts.query then
 			local buf_lang = require("nvim-treesitter.parsers").get_buf_lang(0)
 			vim.treesitter.query.set_query(buf_lang, "hop-extensions", opts.query)
@@ -116,11 +128,19 @@ local treesitter_queries = function(opts)
 		end
 		if opts.captures then
 			for _, match in ipairs(queries.get_capture_matches(0, opts.captures, opts.queryfile, opts.root, opts.lang)) do
-				extract(match)
+				recurse_nodes(match, function(_, node, name, _)
+					if opts.filter(name, node) then
+						treesitter_filter_window(node, context, nodes_set, opts.hop_to_start, opts.hop_to_end)
+					end
+				end)
 			end
 		else
 			for match in queries.iter_group_results(0, opts.queryfile, opts.root, opts.lang) do
-				extract(match)
+				recurse_nodes(match, function(_, node, name, _)
+					if opts.filter(name, node) then
+						treesitter_filter_window(node, context, nodes_set, opts.hop_to_start, opts.hop_to_end)
+					end
+				end)
 			end
 		end
 
@@ -128,34 +148,96 @@ local treesitter_queries = function(opts)
 	end
 end
 -- Treesitter hintings
-function M.hint_locals(filter, opts)
+function M.hint_all_ts_locals(filter, opts)
 	hint_with(treesitter_locals(filter), override_opts(opts))
 end
-function M.hint_definitions(opts)
-	M.hint_locals(function(loc)
-		return loc.definition
+function M.hint_all_ts_definitions(opts)
+	M.hint_all_ts_locals(function(name)
+		return name:sub(1, #"definition") == "definition"
 	end, opts)
 end
-function M.hint_scopes(opts)
-	M.hint_locals(function(loc)
-		return loc.scope
+function M.hint_all_ts_scopes(opts)
+	M.hint_all_ts_locals(function(name)
+		return name:sub(1, #"scope") == "scope"
+	end, opts)
+end
+function M.hint_all_ts_defnref(opts)
+	M.hint_all_ts_locals(function(name)
+		return name:sub(1, #"scope") ~= "scope"
 	end, opts)
 end
 local ts_utils = require("nvim-treesitter.ts_utils")
-function M.hint_ts_references(pattern, opts)
-	if pattern == nil then
-		M.hint_locals(function(loc)
-			return loc.reference
-		end, opts)
-	else
-		if pattern == "<cword>" or pattern == "<cWORD>" then
-			pattern = vim.fn.expand(pattern)
-		end
-		M.hint_locals(function(loc)
-			return loc.reference and string.match(ts_utils.get_node_text(loc.reference.node)[1], pattern)
-				or loc.definition and string.match(ts_utils.get_node_text(loc.definition.node)[1], pattern)
-		end, opts)
+function M.hint_all_ts_references(opts)
+	M.hint_all_ts_locals(function(name)
+		return name:sub(1, #"reference") == "reference"
+	end, opts)
+end
+function M.hint_defnref_pattern(pattern, opts)
+	if pattern == "<cword>" or pattern == "<cWORD>" then
+		pattern = vim.fn.expand(pattern)
 	end
+	local bufnr = vim.api.nvim_get_current_buf()
+	M.hint_all_ts_locals(function(name, node)
+		if name:sub(1, #"scope") == "scope" then
+			return false
+		end
+		local t = vim.treesitter.query.get_node_text(node, bufnr)
+		if t == nil then
+			return false
+		end
+		t = type(t) == "string" and t or t[1]
+		if pattern == nil then
+			return true
+		end
+		return string.match(t, pattern)
+	end, opts)
+end
+function M.hint_scopes_pattern(pattern, opts)
+	if pattern == "<cword>" or pattern == "<cWORD>" then
+		pattern = vim.fn.expand(pattern)
+	end
+	local bufnr = vim.api.nvim_get_current_buf()
+	M.hint_all_ts_locals(function(name, node)
+		if name:sub(1, #"scope") ~= "scope" then
+			return false
+		end
+		local t = vim.treesitter.query.get_node_text(node, bufnr)
+		if t == nil then
+			return false
+		end
+		t = type(t) == "string" and t or t[1]
+		if pattern == nil then
+			return true
+		end
+		return string.match(t, pattern)
+	end, opts)
+end
+function M.hint_ts_usages(opts)
+	M.hint_defnref_pattern("<cword>", opts)
+	-- FIXME: doesn't work?
+	-- local targets = treesitter_targets(
+	-- 	require("nvim-treesitter.locals").find_usages(
+	-- 		require("nvim-treesitter.ts_utils").get_node_at_cursor(),
+	-- 		nil,
+	-- 		vim.api.nvim_get_current_buf()
+	-- 	),
+	-- 	true,
+	-- 	false
+	-- )
+	-- hint_with(function()
+	-- 	return targets
+	-- end, override_opts(opts))
+end
+function M.hint_containing_scopes(opts)
+	local targets = treesitter_targets(
+		require("nvim-treesitter.locals").iter_scope_tree(
+			require("nvim-treesitter.ts_utils").get_node_at_cursor(),
+			vim.api.nvim_get_current_buf()
+		)
+	)
+	hint_with(function()
+		return targets
+	end, override_opts(opts))
 end
 
 function M.hint_from_queryfile(ts_opts, opts)

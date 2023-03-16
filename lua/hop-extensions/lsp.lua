@@ -11,7 +11,7 @@ M.hint_symbols = function(opts, cb)
 	-- TODO: support multi-window with workspace symbols
 	vim.lsp.buf.document_symbol(on_list_hop(opts, cb))
 end
-M.hint_definition = function(opts, cb)
+M.hint_lsp_definition = function(opts, cb)
 	vim.lsp.buf.definition(on_list_hop(opts, cb))
 end
 M.hint_declaration = function(opts, cb)
@@ -20,7 +20,7 @@ end
 M.hint_type_definition = function(opts, cb)
 	vim.lsp.buf.type_definition(on_list_hop(opts, cb))
 end
-M.hint_references = function(opts, cb)
+M.hint_lsp_references = function(opts, cb)
 	vim.lsp.buf.references(nil, on_list_hop(opts, cb))
 end
 M.hint_implementation = function(opts, cb)
