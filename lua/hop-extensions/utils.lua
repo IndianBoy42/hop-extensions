@@ -3,19 +3,20 @@ local jump_target = require("hop.jump_target")
 -- Wrap all the given jump targets using manh_dist
 local get_window_context = require("hop.window").get_window_context
 M.wrap_targets = function(targets, contexts)
-	-- contexts = contexts or get_window_context()
-	-- local cursor_pos = contexts[1].contexts[1].cursor_pos
-	-- local indir = {}
-	-- for i, v in ipairs(targets) do
-	-- 	indir[#indir + 1] = {
-	-- 		index = i,
-	-- 		score = -jump_target.manh_dist({ v.line, v.column }, cursor_pos),
-	-- 	}
-	-- end
+	contexts = contexts or get_window_context()
+	local cursor_pos = contexts[1].contexts[1].cursor_pos
+	local indir = {}
+	for i, v in ipairs(targets) do
+		indir[#indir + 1] = {
+			index = i,
+			score = jump_target.manh_dist(cursor_pos, { v.line, v.column }),
+		}
+	end
 	-- local indir = setmetatable({}, zero_jump_scores)
+	jump_target.sort_indirect_jump_targets(indir, {})
 	return {
 		jump_targets = targets,
-		-- indirect_jump_targets = indir,
+		indirect_jump_targets = indir,
 	}
 end
 -- Allows to override global options with user local overrides.
