@@ -12,6 +12,7 @@ local on_list_hop = require("hop-extensions.utils").on_list_hop
 
 M.ts = require("hop-extensions.ts")
 M.lsp = require("hop-extensions.lsp")
+M.hop = hop
 M.hint_diagnostics = function(opts, diag_opts, popup)
 	opts = override_opts(opts)
 	local context = get_window_context( --[[ hint_opts --]])
@@ -50,6 +51,9 @@ M.hint_diagnostics = function(opts, diag_opts, popup)
 	end
 end
 
+-- TODO: can we implement pounce.nvim with this?
+M.hint_fuzzy = function() end
+
 M.hint_quickfix = function(list, opts, cb)
 	list = list or vim.fn.getqflist()
 	on_list_hop(opts, cb)({ items = list })
@@ -59,8 +63,20 @@ M.hint_loclist = function(list, opts, cb)
 	on_list_hop(opts, cb)({ items = list })
 end
 
+M.hint_patterns_from = function(opts, gen)
+	if type(gen) == "table" then
+		gen_opts = gen
+		gen = function()
+			if gen_opts.reg then
+				return vim.fn.getreg(gen_opts.reg)
+			elseif gen_opts.expand then
+				return vim.fn.expand(gen_opts.expand)
+			end
+		end
+	end
+	M.hint_patterns(opts, gen())
+end
+
 return setmetatable(M, {
-	__index = function(_, key)
-		return hop[key] or M.ts[key] or M.lsp[key]
-	end,
+	__index = hop,
 })
