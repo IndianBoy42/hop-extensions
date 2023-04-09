@@ -1,14 +1,12 @@
 local M = {}
 -- local hop = require "hop"
 
-local on_list_hop = function(opts, callback)
-	return {
-		on_list = require("hop-extensions.utils").on_list_hop(opts, callback),
-	}
-end
+local on_list_hop = require("hop-extensions.utils").on_list_hop
+
+-- TODO: fallback to just jumping if none visible
 
 M.hint_symbols = function(opts, cb)
-	-- TODO: support multi-window with workspace symbols
+	-- TODO: support multi-window
 	vim.lsp.buf.document_symbol(on_list_hop(opts, cb))
 end
 M.hint_definition = function(opts, cb)

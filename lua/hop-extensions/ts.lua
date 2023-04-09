@@ -1,17 +1,16 @@
 local M = {}
-local hint_with = require("hop").hint_with
 local window = require("hop.window")
 
-local wrap_targets = require("hop-extensions.utils").wrap_targets
-local override_opts = require("hop-extensions.utils").override_opts
-local filter_window = require("hop-extensions.utils").filter_window
+local hutils = require("hop-extensions.utils")
+local wrap_targets = hutils.wrap_targets
+local override_opts = hutils.override_opts
 
 local function ends_with(str, ending)
 	return ending == "" or str:sub(-#ending) == ending
 end
 
 -- Fix indexing
-local function treesitter_filter_window(node, contexts, nodes_set, hop_to_start, hop_to_end)
+local function treesitter_filter_window(opts, node, nodes_set, nodes_others, hop_to_start, hop_to_end)
 	if hop_to_start == nil then
 		hop_to_start = true
 	end
@@ -21,34 +20,52 @@ local function treesitter_filter_window(node, contexts, nodes_set, hop_to_start,
 
 	if hop_to_start then
 		local line, column, _ = node:start()
-		filter_window({
-			line = line,
-			column = column + 1,
-			window = 0,
-			ts_node = node,
-		}, contexts, nodes_set)
+		if
+			not opts.filter_window(opts, {
+				line = line,
+				column = column + 1,
+				window = 0,
+				ts_node = node,
+			}, nodes_set)
+		then
+			nodes_others[line .. column] = node
+		end
 	end
 	if hop_to_end then
 		local line, column, _ = node:end_()
-		filter_window({
-			line = line,
-			column = column + 1,
-			window = 0,
-			ts_node = node,
-		}, contexts, nodes_set)
+		if
+			not opts.filter_window(opts, {
+				line = line,
+				column = column + 1,
+				window = 0,
+				ts_node = node,
+			}, nodes_set)
+		then
+			nodes_others[line .. column] = node
+		end
+	end
+end
+local function jump_if_none_visible(nodes_set, nodes_other, opts)
+	if #nodes_set == 0 then
+		if #nodes_other > 0 then
+			local node = nodes_other[1]
+			local line, column, _ = node:start()
+			vim.api.nvim_win_set_cursor(0, { line, column })
+		end
 	end
 end
 
-local treesitter_targets = function(nodes, ...)
-	local context = window.get_window_context()
+local treesitter_targets = function(nodes, hop_to_start, hop_to_end)
+	local context = window.get_window_context(opts.multi_windows)
 	local nodes_set = {}
+	local nodes_other = {}
 	if type(nodes) == "table" then
 		for _, node in ipairs(nodes) do
-			treesitter_filter_window(node, context, nodes_set, ...)
+			treesitter_filter_window(opts, node, nodes_set, nodes_other, hop_to_start, hop_to_end)
 		end
 	else
 		for node in nodes do
-			treesitter_filter_window(node, context, nodes_set, ...)
+			treesitter_filter_window(opts, node, nodes_set, nodes_other, hop_to_start, hop_to_end)
 		end
 	end
 	return wrap_targets(vim.tbl_values(nodes_set))
@@ -74,17 +91,18 @@ local treesitter_locals = function(filter)
 			return false
 		end
 	end
-	return function(hint_opts)
+	return function(opts)
 		local locals = require("nvim-treesitter.locals")
 		local local_nodes = locals.get_locals()
-		local context = window.get_window_context()
+		local context = window.get_window_context(opts.multi_windows)
 
 		-- Make sure the nodes are unique.
 		local nodes_set = {}
+		local nodes_other = {}
 		for _, loc in ipairs(local_nodes) do
 			recurse_nodes(loc, function(_, node, name, _)
 				if filter(name, node) then
-					treesitter_filter_window(node, context, nodes_set, true, false)
+					treesitter_filter_window(opts, node, nodes_set, nodes_other, true, false)
 				end
 			end)
 		end
@@ -117,20 +135,27 @@ local treesitter_queries = function(opts)
 		end
 	end
 	return function(hint_opts)
-		local context = window.get_window_context()
 		local queries = require("nvim-treesitter.query")
 		local nodes_set = {}
+		local nodes_other = {}
 
 		if opts.query then
 			local buf_lang = require("nvim-treesitter.parsers").get_buf_lang(0)
-			vim.treesitter.query.set_query(buf_lang, "hop-extensions", opts.query)
+			vim.treesitter.query.set(buf_lang, "hop-extensions", opts.query)
 			opts.queryfile = "hop-extensions"
 		end
 		if opts.captures then
 			for _, match in ipairs(queries.get_capture_matches(0, opts.captures, opts.queryfile, opts.root, opts.lang)) do
 				recurse_nodes(match, function(_, node, name, _)
 					if opts.filter(name, node) then
-						treesitter_filter_window(node, context, nodes_set, opts.hop_to_start, opts.hop_to_end)
+						treesitter_filter_window(
+							hint_opts,
+							node,
+							nodes_set,
+							nodes_other,
+							opts.hop_to_start,
+							opts.hop_to_end
+						)
 					end
 				end)
 			end
@@ -138,7 +163,14 @@ local treesitter_queries = function(opts)
 			for match in queries.iter_group_results(0, opts.queryfile, opts.root, opts.lang) do
 				recurse_nodes(match, function(_, node, name, _)
 					if opts.filter(name, node) then
-						treesitter_filter_window(node, context, nodes_set, opts.hop_to_start, opts.hop_to_end)
+						treesitter_filter_window(
+							hint_opts,
+							node,
+							nodes_set,
+							nodes_other,
+							opts.hop_to_start,
+							opts.hop_to_end
+						)
 					end
 				end)
 			end
@@ -148,40 +180,40 @@ local treesitter_queries = function(opts)
 	end
 end
 -- Treesitter hintings
-function M.hint_locals(filter, opts)
-	hint_with(treesitter_locals(filter), override_opts(opts))
+function M.hint_locals(opts, filter)
+	opts = override_opts(opts)
+	opts.hint_with(treesitter_locals(filter), opts)
 end
 function M.hint_definitions(opts)
-	M.hint_locals(function(name)
+	M.hint_locals(opts, function(name)
 		return name:sub(1, #"definition") == "definition"
-	end, opts)
+	end)
 end
 function M.hint_scopes(opts)
-	M.hint_locals(function(name)
+	M.hint_locals(opts, function(name)
 		return name:sub(1, #"scope") == "scope"
-	end, opts)
+	end)
 end
 function M.hint_defnref(opts)
-	M.hint_locals(function(name)
+	M.hint_locals(opts, function(name)
 		return name:sub(1, #"scope") ~= "scope"
-	end, opts)
+	end)
 end
-local ts_utils = require("nvim-treesitter.ts_utils")
 function M.hint_references(opts)
-	M.hint_locals(function(name)
+	M.hint_locals(opts, function(name)
 		return name:sub(1, #"reference") == "reference"
-	end, opts)
+	end)
 end
-function M.hint_defnref_pattern(pattern, opts)
+function M.hint_defnref_pattern(opts, pattern)
 	if pattern == "<cword>" or pattern == "<cWORD>" then
 		pattern = vim.fn.expand(pattern)
 	end
 	local bufnr = vim.api.nvim_get_current_buf()
-	M.hint_locals(function(name, node)
+	M.hint_locals(opts, function(name, node)
 		if name:sub(1, #"scope") == "scope" then
 			return false
 		end
-		local t = vim.treesitter.query.get_node_text(node, bufnr)
+		local t = vim.treesitter.get_node_text(node, bufnr)
 		if t == nil then
 			return false
 		end
@@ -190,18 +222,18 @@ function M.hint_defnref_pattern(pattern, opts)
 			return true
 		end
 		return string.match(t, pattern)
-	end, opts)
+	end)
 end
-function M.hint_scopes_pattern(pattern, opts)
+function M.hint_scopes_pattern(opts, pattern)
 	if pattern == "<cword>" or pattern == "<cWORD>" then
 		pattern = vim.fn.expand(pattern)
 	end
 	local bufnr = vim.api.nvim_get_current_buf()
-	M.hint_locals(function(name, node)
+	M.hint_locals(opts, function(name, node)
 		if name:sub(1, #"scope") ~= "scope" then
 			return false
 		end
-		local t = vim.treesitter.query.get_node_text(node, bufnr)
+		local t = vim.treesitter.get_node_text(node, bufnr)
 		if t == nil then
 			return false
 		end
@@ -210,10 +242,10 @@ function M.hint_scopes_pattern(pattern, opts)
 			return true
 		end
 		return string.match(t, pattern)
-	end, opts)
+	end)
 end
 function M.hint_usages(opts)
-	M.hint_defnref_pattern("<cword>", opts)
+	M.hint_defnref_pattern(opts, "<cword>")
 	-- FIXME: doesn't work?
 	-- local targets = treesitter_targets(
 	-- 	require("nvim-treesitter.locals").find_usages(
@@ -224,12 +256,13 @@ function M.hint_usages(opts)
 	-- 	true,
 	-- 	false
 	-- )
-	-- hint_with(function()
+	-- opts.hint_with(function()
 	-- 	return targets
 	-- end, override_opts(opts))
 end
 function M.hint_containing_scopes(opts)
-	hint_with(function()
+	opts = override_opts(opts)
+	opts.hint_with(function()
 		return treesitter_targets(
 			require("nvim-treesitter.locals").iter_scope_tree(
 				require("nvim-treesitter.ts_utils").get_node_at_cursor(),
@@ -238,28 +271,30 @@ function M.hint_containing_scopes(opts)
 			opts.hop_to_start,
 			opts.hop_to_end
 		)
-	end, override_opts(opts))
+	end, opts)
 end
 
-function M.hint_from_queryfile(ts_opts, opts)
+function M.hint_from_queryfile(opts, ts_opts)
 	ts_opts = ts_opts or {}
 	if type(ts_opts) == "string" then
 		-- if ends_with(captures, "outer") then
 		-- end
 		ts_opts = { queryfile = ts_opts }
 	end
-	hint_with(treesitter_queries(ts_opts), override_opts(opts))
+	opts = override_opts(opts)
+	opts.hint_with(treesitter_queries(ts_opts), opts)
 end
-function M.hint_from_query(ts_opts, opts)
+function M.hint_from_query(opts, ts_opts)
 	ts_opts = ts_opts or {}
 	if type(ts_opts) == "string" then
 		-- if ends_with(captures, "outer") then
 		-- end
 		ts_opts = { query = ts_opts }
 	end
-	hint_with(treesitter_queries(ts_opts), override_opts(opts))
+	opts = override_opts(opts)
+	opts.hint_with(treesitter_queries(ts_opts), opts)
 end
-function M.hint_textobjects(ts_opts, opts)
+function M.hint_textobjects(opts, ts_opts)
 	ts_opts = ts_opts or {}
 	if type(ts_opts) == "string" then
 		-- if ends_with(captures, "outer") then
@@ -268,7 +303,8 @@ function M.hint_textobjects(ts_opts, opts)
 	end
 	ts_opts.queryfile = "textobjects"
 	ts_opts.filter = ts_opts.filter or { "outer", "inner" }
-	hint_with(treesitter_queries(ts_opts), override_opts(opts))
+	opts = override_opts(opts)
+	opts.hint_with(treesitter_queries(ts_opts), opts)
 end
 
 local function insert_parent_nodes(nodes, node)
@@ -330,12 +366,37 @@ local function ts_parents_from_cursor(opts)
 	insert_parent_nodes(nodes, cursor_node)
 	return nodes
 end
-function M.hint_containing_nodes(opts) -- from treehopper
-	opts = opts or {}
-	hint_with(function()
+
+-- from treehopper
+function M.hint_containing_nodes(opts)
+	opts = override_opts(opts)
+	opts.hint_with(function()
 		local nodes = ts_parents_from_cursor(opts)
-		utils.dump(nodes)
 		return treesitter_targets(nodes, opts.hop_to_start, opts.hop_to_end)
-	end, override_opts(opts))
+	end, opts)
 end
+function M.hint_sibling_nodes(opts)
+	-- TODO: implement this
+	-- local internal = require("iswap.internal")
+	-- opts = override_opts(opts)
+	-- opts.hint_with(function()
+	-- 	local bufnr = vim.api.nvim_get_current_buf()
+	-- 	local winid = vim.api.nvim_get_current_win()
+	-- 	local parent = internal.get_list_node_at_cursor(winid, config)
+	-- 	if not parent then
+	-- 		err("did not find a satisfiable parent node", config.debug)
+	-- 		return
+	-- 	end
+	-- end, opts)
+end
+
+M.select = setmetatable({}, {
+	__index = function(t, k)
+		return function(opts, ...)
+			opts.callback = "select_ts_node"
+			M[k](opts, ...)
+		end
+	end,
+})
+
 return M
