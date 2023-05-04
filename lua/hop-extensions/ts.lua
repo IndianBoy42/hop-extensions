@@ -55,17 +55,17 @@ local function jump_if_none_visible(nodes_set, nodes_other, opts)
 	end
 end
 
-local treesitter_targets = function(nodes, hop_to_start, hop_to_end)
+local treesitter_targets = function(nodes, opts)
 	local context = window.get_window_context(opts.multi_windows)
 	local nodes_set = {}
 	local nodes_other = {}
 	if type(nodes) == "table" then
 		for _, node in ipairs(nodes) do
-			treesitter_filter_window(opts, node, nodes_set, nodes_other, hop_to_start, hop_to_end)
+			treesitter_filter_window(opts, node, nodes_set, nodes_other, opts.hop_to_start, opts.hop_to_end)
 		end
 	else
 		for node in nodes do
-			treesitter_filter_window(opts, node, nodes_set, nodes_other, hop_to_start, hop_to_end)
+			treesitter_filter_window(opts, node, nodes_set, nodes_other, opts.hop_to_start, opts.hop_to_end)
 		end
 	end
 	return wrap_targets(vim.tbl_values(nodes_set))
@@ -268,8 +268,7 @@ function M.hint_containing_scopes(opts)
 				require("nvim-treesitter.ts_utils").get_node_at_cursor(),
 				vim.api.nvim_get_current_buf()
 			),
-			opts.hop_to_start,
-			opts.hop_to_end
+			opts
 		)
 	end, opts)
 end
@@ -295,11 +294,11 @@ function M.hint_from_query(opts, ts_opts)
 	opts.hint_with(treesitter_queries(ts_opts), opts)
 end
 function M.hint_textobjects(opts, ts_opts)
-	ts_opts = ts_opts or {}
+	ts_opts = ts_opts or { queryfile = "textobjects" }
 	if type(ts_opts) == "string" then
 		-- if ends_with(captures, "outer") then
 		-- end
-		ts_opts = { captures = ts_opts }
+		ts_opts = { captures = ts_opts, queryfile = "textobjects" }
 	end
 	ts_opts.queryfile = "textobjects"
 	ts_opts.filter = ts_opts.filter or { "outer", "inner" }
@@ -372,7 +371,7 @@ function M.hint_containing_nodes(opts)
 	opts = override_opts(opts)
 	opts.hint_with(function()
 		local nodes = ts_parents_from_cursor(opts)
-		return treesitter_targets(nodes, opts.hop_to_start, opts.hop_to_end)
+		return treesitter_targets(nodes, opts)
 	end, opts)
 end
 function M.hint_sibling_nodes(opts)

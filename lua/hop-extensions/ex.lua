@@ -1,34 +1,3 @@
-# Hop Extensions for Treesitter and LSP
-
-Work-in-progress. API may change. Performance may improve. Only Lua API for now, possibly forever
-
-Install like any other plugin
-
-```lua
-Plug 'phaazon/hop.nvim'
-Plug 'indianboy42/hop-extensions'
-```
-
-or Packer
-
-```lua
-use 'phaazon/hop.nvim'
-use 'indianboy42/hop-extensions'
-
-```
-
-Or Lazy
-
-```lua
-return {
-    "IndianBoy42/hop-extensions",
-    dependencies = { "phaazon/hop.nvim" },
-}
-```
-
-Usage (bind any of these functions to a key):
-
-```lua
 local hop = require("hop-extension")
 
 -- You can access anything in `require'hop'`
@@ -109,7 +78,3 @@ hop.lsp.hint_implementation()
 -- Miscellaneous
 hop.hint_quickfix(list, hop_opts or {})
 hop.hint_loclist(list, hop_opts or {})
-```
-
-Unless otherwise specified all functions take `hop_opts or {}` as the first
-argument, see the hop.nvim documentation, you can of course just pass nil

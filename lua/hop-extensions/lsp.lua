@@ -4,6 +4,7 @@ local M = {}
 local on_list_hop = require("hop-extensions.utils").on_list_hop
 
 -- TODO: fallback to just jumping if none visible
+-- TODO: use sync?
 
 M.hint_symbols = function(opts, cb)
 	-- TODO: support multi-window

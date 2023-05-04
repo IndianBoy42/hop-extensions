@@ -24,16 +24,15 @@ M.hint_diagnostics = function(opts, diag_opts, popup)
 	end
 	local targets = wrap_targets(vim.tbl_values(out), context)
 
-	local callback = nil
 	if popup ~= false then
 		opts.callback = function(jt)
-			require("hop").move_cursor_to(jt.window, jt.line + 1, jt.column - 1, opts.hint_offset, opts.direction)
+			hop.move_cursor_to(jt.window, jt.line + 1, jt.column - 1, opts.hint_offset, opts.direction)
 			if type(popup) == "table" then
 				vim.diagnostic.open_float(popup)
 			elseif type(popup) == "function" then
 				popup(jt)
 			else
-				local scope = type(popup) == "string" and popup or "line"
+				local scope = type(popup) == "string" and popup or "cursor"
 				vim.diagnostic.open_float({ scope = scope })
 			end
 		end
@@ -63,17 +62,60 @@ M.hint_loclist = function(list, opts, cb)
 end
 
 M.hint_patterns_from = function(opts, gen)
-	if type(gen) == "table" then
-		gen_opts = gen
-		gen = function()
-			if gen_opts.reg then
-				return vim.fn.getreg(gen_opts.reg)
-			elseif gen_opts.expand then
-				return vim.fn.expand(gen_opts.expand)
-			end
+	if type(gen) == "function" then
+		gen = gen()
+	elseif type(gen) == "table" then
+		local gen_opts = gen
+		if gen_opts.reg then
+			gen = vim.fn.getreg(gen_opts.reg)
+		elseif gen_opts.expand then
+			gen = vim.fn.expand(gen_opts.expand)
 		end
 	end
-	M.hint_patterns(opts, gen())
+	M.hint_patterns(opts, gen)
+end
+-- TODO: HopPattern with preview
+M.setup_hop_pattern = function()
+	local hint = require("hop.hint")
+	local function cb(o)
+		local f = function()
+			return function(args)
+				return hop.hint_patterns(o, #args.args > 0 and args.args)
+			end
+		end
+		local opts = {
+			nargs = "?",
+			preview = function(args, ns, buf)
+				-- TODO: requires changes to hop internals probably..
+			end,
+		}
+		return f, opts
+	end
+	-- " The jump-to-pattern command.
+	-- command! HopPattern              lua require'hop'.hint_patterns()
+	vim.api.nvim_create_user_command("HopPattern", cb({}))
+	-- command! HopPatternBC            lua require'hop'.hint_patterns({ direction = require'hop.hint'.HintDirection.BEFORE_CURSOR })
+	vim.api.nvim_create_user_command("HopPatternBC", cb({ direction = hint.HintDirection.BEFORE_CURSOR }))
+	-- command! HopPatternAC            lua require'hop'.hint_patterns({ direction = require'hop.hint'.HintDirection.AFTER_CURSOR })
+	vim.api.nvim_create_user_command("HopPatternAC", cb({ direction = hint.HintDirection.AFTER_CURSOR }))
+	-- command! HopPatternCurrentLine   lua require'hop'.hint_patterns({ current_line_only = true })
+	vim.api.nvim_create_user_command("HopPatternCurrentLine", cb({ current_line_only = true }))
+	-- command! HopPatternCurrentLineBC lua require'hop'.hint_patterns({ direction = require'hop.hint'.HintDirection.BEFORE_CURSOR, current_line_only = true })
+	vim.api.nvim_create_user_command(
+		"HopPatternCurrentLineBC",
+		cb({ direction = hint.HintDirection.BEFORE_CURSOR, current_line_only = true })
+	)
+	-- command! HopPatternCurrentLineAC lua require'hop'.hint_patterns({ direction = require'hop.hint'.HintDirection.AFTER_CURSOR, current_line_only = true })
+	vim.api.nvim_create_user_command(
+		"HopPatternCurrentLineAC",
+		cb({ direction = hint.HintDirection.AFTER_CURSOR, current_line_only = true })
+	)
+	-- command! HopPatternMW            lua require'hop'.hint_patterns({ multi_windows = true })
+	vim.api.nvim_create_user_command("HopPatternMW", cb({ multi_windows = true }))
+end
+
+M.hint_folds = function(opts)
+	return
 end
 
 return setmetatable(M, {
